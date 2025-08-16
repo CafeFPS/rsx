@@ -1,6 +1,8 @@
 #include <pch.h>
 #include <game/rtech/assets/shaderset.h>
 #include <thirdparty/imgui/imgui.h>
+#include <fstream>
+#include <format>
 
 extern ExportSettings_t g_ExportSettings;
 
@@ -225,17 +227,42 @@ bool ExportShaderSetAsset(CAsset* const asset, const int setting)
 		return false;
 	}
 
-	exportPath /= asset->GetAssetName();
+	// Use GUID as filename
+	const uint64_t guid = pakAsset->GetAssetGUID();
+	const std::string guidFilename = std::format("0x{:X}", guid);
+	dirPath /= guidFilename;
+
+	// Create dependency .txt file with shader GUIDs
+	std::filesystem::path dependencyPath = dirPath;
+	dependencyPath.replace_extension(".txt");
+	
+	std::ofstream depFile(dependencyPath);
+	if (depFile.is_open())
+	{
+		// Format vertex shader GUID
+		if (shdsAsset->vertexShader != 0)
+		{
+			depFile << std::format("0x{:X}\n", shdsAsset->vertexShader);
+		}
+		
+		// Format pixel shader GUID
+		if (shdsAsset->pixelShader != 0)
+		{
+			depFile << std::format("0x{:X}\n", shdsAsset->pixelShader);
+		}
+		
+		depFile.close();
+	}
 
 	switch (setting)
 	{
 	case eShaderSetExportSetting::ShaderSet:
 	{
-		return ExportMSWShaderSetAsset(shdsAsset, exportPath, false);
+		return ExportMSWShaderSetAsset(shdsAsset, dirPath, false);
 	}
 	case eShaderSetExportSetting::ShaderSetPacked:
 	{
-		return ExportMSWShaderSetAsset(shdsAsset, exportPath, true);
+		return ExportMSWShaderSetAsset(shdsAsset, dirPath, true);
 	}
 	default:
 	{

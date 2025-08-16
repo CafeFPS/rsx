@@ -677,10 +677,16 @@ bool ExportShaderAsset(CAsset* const asset, const int setting)
 
 	// Create exported path + asset path.
 	std::filesystem::path exportPath = std::filesystem::current_path().append(EXPORT_DIRECTORY_NAME);
-	const std::filesystem::path shaderPath(asset->GetAssetName());
+	
+	// Use GUID as filename
+	const uint64_t guid = pakAsset->GetAssetGUID();
+	const std::string guidFilename = std::format("0x{:X}", guid);
 
 	if (g_ExportSettings.exportPathsFull)
+	{
+		const std::filesystem::path shaderPath(asset->GetAssetName());
 		exportPath.append(shaderPath.parent_path().string());
+	}
 	else
 		exportPath.append(s_PathPrefixSHDR);
 
@@ -690,7 +696,7 @@ bool ExportShaderAsset(CAsset* const asset, const int setting)
 		return false;
 	}
 
-	exportPath.append(shaderPath.filename().string());
+	exportPath.append(guidFilename);
 
 	switch (setting)
 	{
