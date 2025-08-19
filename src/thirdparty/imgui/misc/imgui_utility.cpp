@@ -428,6 +428,9 @@ ImGuiHandler::ImGuiHandler()
     cfg.exportThreadCount = 1u;
     cfg.parseThreadCount = std::max(totalThreadCount >> 1u, 1u);
 
+    // Initialize filter settings
+    filter.extendedFilterBuffer[0] = '\0';
+
     memset(pbEvents, 0, sizeof(pbEvents));
     for (int8_t i = PB_SIZE - 1; i >= 0; --i) // in reverse order
     {

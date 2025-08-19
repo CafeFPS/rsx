@@ -87,7 +87,8 @@ public:
 
     struct FilterSettings_t
     {
-        ImGuiTextFilter textFilter;
+        ImGuiTextFilter textFilter;  // Kept for compatibility but not actively used
+        char extendedFilterBuffer[65536];  // Extended buffer for large comma-separated lists (64KB)
     } filter;
 
     ImFont* GetDefaultFont() const { return defaultFont; };

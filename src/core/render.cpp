@@ -1,6 +1,8 @@
 #include <pch.h>
 
 #include <core/render.h>
+#include <sstream>
+#include <algorithm>
 
 #include <imgui.h>
 #include <backends/imgui_impl_dx11.h>
@@ -364,7 +366,8 @@ void HandleRenderFrame()
         ImGui::SetNextWindowSize(ImVec2(800, 400), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Asset List", nullptr, ImGuiWindowFlags_MenuBar))
         {
-            std::vector<CGlobalAssetData::AssetLookup_t>& pakAssets = FilterConfig->textFilter.IsActive() ? filteredAssets : g_assetData.v_assets;
+            std::vector<CGlobalAssetData::AssetLookup_t>& pakAssets = 
+                (strlen(FilterConfig->extendedFilterBuffer) > 0 && !filteredAssets.empty()) ? filteredAssets : g_assetData.v_assets;
 
             if (ImGui::BeginMenuBar())
             {
@@ -456,27 +459,121 @@ void HandleRenderFrame()
             }
 
             // OR case if we load a pak and the filter is not cleared yet.
-            if (FilterConfig->textFilter.Draw("##Filter", -1.f) || (filteredAssets.empty() && FilterConfig->textFilter.IsActive()))
+            // Use extended buffer for large comma-separated lists
+            bool filterChanged = false;
+            
+            // Always use extended buffer for safety - it can handle both small and large inputs
+            ImGui::PushItemWidth(-100.f);
+            if (ImGui::InputText("##Filter", FilterConfig->extendedFilterBuffer, sizeof(FilterConfig->extendedFilterBuffer)))
+            {
+                filterChanged = true;
+            }
+            ImGui::PopItemWidth();
+            
+            // Show buffer info if filter is active
+            if (strlen(FilterConfig->extendedFilterBuffer) > 0)
+            {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.f), "[%zu chars]", strlen(FilterConfig->extendedFilterBuffer));
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Clear"))
+                {
+                    FilterConfig->extendedFilterBuffer[0] = '\0';
+                    filterChanged = true;
+                }
+            }
+
+            if (filterChanged)
             {
                 filteredAssets.clear();
-                for (auto& it : g_assetData.v_assets)
+                
+                // Get filter text from extended buffer
+                const char* filterText = FilterConfig->extendedFilterBuffer;
+                
+                // If filter is empty, show all assets
+                if (strlen(filterText) == 0)
                 {
-                    const std::string& assetName = it.m_asset->GetAssetName();
+                    // Don't apply any filter - the main code will use g_assetData.v_assets directly
+                    filteredAssets.clear();
+                }
+                else
+                {
+                    // Check if input contains commas - if so, treat as comma-separated list
+                    if (strchr(filterText, ',') != nullptr)
+                    {
+                        // Handle comma-separated list
+                        std::vector<std::string> filterTerms;
+                        std::stringstream ss(filterText);
+                        std::string term;
+                        while (std::getline(ss, term, ','))
+                        {
+                            // Trim whitespace
+                            term.erase(0, term.find_first_not_of(" \t\r\n"));
+                            term.erase(term.find_last_not_of(" \t\r\n") + 1);
+                            if (!term.empty())
+                            {
+                                // Convert to lowercase for case-insensitive comparison
+                                std::transform(term.begin(), term.end(), term.begin(), 
+                                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                                filterTerms.push_back(term);
+                            }
+                        }
 
-                    if (FilterConfig->textFilter.PassFilter(assetName.c_str()))
-                        filteredAssets.push_back(it);
+                        // Apply filters - look for exact matches (case-insensitive)
+                        for (auto& it : g_assetData.v_assets)
+                        {
+                            const std::string& assetName = it.m_asset->GetAssetName();
+                            
+                            // Convert asset name to lowercase for comparison
+                            std::string assetNameLower = assetName;
+                            std::transform(assetNameLower.begin(), assetNameLower.end(), assetNameLower.begin(), 
+                                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                            
+                            // Check if asset matches any filter term exactly (case-insensitive)
+                            for (const auto& filter : filterTerms)
+                            {
+                                if (assetNameLower == filter)
+                                {
+                                    filteredAssets.push_back(it);
+                                    break;  // Found match, move to next asset
+                                }
+                            }
+                        }
+                    }
                     else
                     {
-                        const char* const inputText = FilterConfig->textFilter.InputBuf;
-                        const size_t inputLen = strlen(inputText);
-
-                        char* end;
-                        const uint64_t guid = strtoull(inputText, &end, 0);
-
-                        if (end == &inputText[inputLen])
+                        // Single filter term - use substring matching (case-insensitive)
+                        std::string filterStr(filterText);
+                        std::transform(filterStr.begin(), filterStr.end(), filterStr.begin(), 
+                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                        
+                        for (auto& it : g_assetData.v_assets)
                         {
-                            if (guid == RTech::StringToGuid(assetName.c_str()))
+                            const std::string& assetName = it.m_asset->GetAssetName();
+                            
+                            // Convert asset name to lowercase for comparison
+                            std::string assetNameLower = assetName;
+                            std::transform(assetNameLower.begin(), assetNameLower.end(), assetNameLower.begin(), 
+                                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                            
+                            // Substring match (case-insensitive)
+                            if (assetNameLower.find(filterStr) != std::string::npos)
+                            {
                                 filteredAssets.push_back(it);
+                            }
+                            else
+                            {
+                                // Also check for GUID match
+                                char* end;
+                                const uint64_t guid = strtoull(filterText, &end, 0);
+                                if (end == &filterText[strlen(filterText)])
+                                {
+                                    if (guid == RTech::StringToGuid(assetName.c_str()))
+                                    {
+                                        filteredAssets.push_back(it);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
