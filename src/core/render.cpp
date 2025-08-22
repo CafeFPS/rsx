@@ -498,79 +498,45 @@ void HandleRenderFrame()
                 }
                 else
                 {
-                    // Check if input contains commas - if so, treat as comma-separated list
-                    if (strchr(filterText, ',') != nullptr)
+                    // Create a temporary ImGuiTextFilter to leverage ImGui's built-in comma handling
+                    ImGuiTextFilter tempFilter;
+                    strncpy_s(tempFilter.InputBuf, sizeof(tempFilter.InputBuf), filterText, _TRUNCATE);
+                    tempFilter.Build();
+                    
+                    for (auto& it : g_assetData.v_assets)
                     {
-                        // Handle comma-separated list
-                        std::vector<std::string> filterTerms;
-                        std::stringstream ss(filterText);
-                        std::string term;
-                        while (std::getline(ss, term, ','))
-                        {
-                            // Trim whitespace
-                            term.erase(0, term.find_first_not_of(" \t\r\n"));
-                            term.erase(term.find_last_not_of(" \t\r\n") + 1);
-                            if (!term.empty())
-                            {
-                                // Convert to lowercase for case-insensitive comparison
-                                std::transform(term.begin(), term.end(), term.begin(), 
-                                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                                filterTerms.push_back(term);
-                            }
-                        }
-
-                        // Apply filters - look for exact matches (case-insensitive)
-                        for (auto& it : g_assetData.v_assets)
-                        {
-                            const std::string& assetName = it.m_asset->GetAssetName();
-                            
-                            // Convert asset name to lowercase for comparison
-                            std::string assetNameLower = assetName;
-                            std::transform(assetNameLower.begin(), assetNameLower.end(), assetNameLower.begin(), 
-                                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                            
-                            // Check if asset matches any filter term exactly (case-insensitive)
-                            for (const auto& filter : filterTerms)
-                            {
-                                if (assetNameLower == filter)
-                                {
-                                    filteredAssets.push_back(it);
-                                    break;  // Found match, move to next asset
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // Single filter term - use substring matching (case-insensitive)
-                        std::string filterStr(filterText);
-                        std::transform(filterStr.begin(), filterStr.end(), filterStr.begin(), 
-                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                        const std::string& assetName = it.m_asset->GetAssetName();
                         
-                        for (auto& it : g_assetData.v_assets)
+                        // First try name matching using ImGui's built-in filter (handles commas automatically)
+                        if (tempFilter.PassFilter(assetName.c_str()))
                         {
-                            const std::string& assetName = it.m_asset->GetAssetName();
+                            filteredAssets.push_back(it);
+                        }
+                        else
+                        {
+                            // If name doesn't match, try GUID matching for each comma-separated term
+                            std::stringstream ss(filterText);
+                            std::string term;
+                            bool guidMatch = false;
                             
-                            // Convert asset name to lowercase for comparison
-                            std::string assetNameLower = assetName;
-                            std::transform(assetNameLower.begin(), assetNameLower.end(), assetNameLower.begin(), 
-                                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                            
-                            // Substring match (case-insensitive)
-                            if (assetNameLower.find(filterStr) != std::string::npos)
+                            while (std::getline(ss, term, ',') && !guidMatch)
                             {
-                                filteredAssets.push_back(it);
-                            }
-                            else
-                            {
-                                // Also check for GUID match
-                                char* end;
-                                const uint64_t guid = strtoull(filterText, &end, 0);
-                                if (end == &filterText[strlen(filterText)])
+                                // Trim whitespace
+                                term.erase(0, term.find_first_not_of(" \t\r\n"));
+                                term.erase(term.find_last_not_of(" \t\r\n") + 1);
+                                
+                                if (!term.empty())
                                 {
-                                    if (guid == RTech::StringToGuid(assetName.c_str()))
+                                    char* end;
+                                    const uint64_t guid = strtoull(term.c_str(), &end, 0);
+                                    
+                                    if (end == term.c_str() + term.length())
                                     {
-                                        filteredAssets.push_back(it);
+                                        if (guid == RTech::StringToGuid(assetName.c_str()))
+                                        {
+                                            filteredAssets.push_back(it);
+                                            guidMatch = true;
+                                        }
                                     }
                                 }
                             }
